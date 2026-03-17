@@ -33,3 +33,33 @@ class Tokenizer:
     @property
     def vocab_size(self):
         return len(self.idx_to_word)
+
+# Basic Linear Layer (NumPy)
+class Linear:
+    def __init__(self, input_dim, output_dim):
+        # Initialize weights and biases
+        self.weights = np.random.randn(input_dim, output_dim) * 0.01
+        self.biases = np.zeros(output_dim)
+
+    def __call__(self, x):
+        return np.dot(x, self.weights) + self.biases
+
+# Basic Embedding Layer (NumPy)
+class Embedding:
+    def __init__(self, vocab_size, embed_dim):
+        self.embedding_matrix = np.random.randn(vocab_size, embed_dim) * 0.01
+
+    def __call__(self, x):
+        return self.embedding_matrix[x]
+
+# Layer Normalization (NumPy)
+class LayerNorm:
+    def __init__(self, features, eps=1e-6):
+        self.gamma = np.ones(features)
+        self.beta = np.zeros(features)
+        self.eps = eps
+
+    def __call__(self, x):
+        mean = x.mean(axis=-1, keepdims=True)
+        std = x.std(axis=-1, keepdims=True)
+        return self.gamma * (x - mean) / (std + self.eps) + self.beta
