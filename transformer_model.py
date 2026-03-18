@@ -137,3 +137,88 @@ class PositionalEncoding:
         # x é (batch_size, seq_len, d_model)
         seq_len = x.shape[1]
         return x + self.pe[:, :seq_len]
+
+# Bloco Codificador (Tarefa 2 - versão NumPy)
+class EncoderBlock:
+    def __init__(self, d_model, n_heads, d_ff, dropout_rate):
+        self.self_attn = MultiHeadAttention(d_model, n_heads)
+        self.feed_forward = FeedForward(d_model, d_ff, dropout_rate)
+        self.add_norm1 = AddNorm(d_model, dropout_rate)
+        self.add_norm2 = AddNorm(d_model, dropout_rate)
+
+    def __call__(self, x, mask):
+        # Subcamada de Auto-Atenção
+        attn_output = self.self_attn(x, x, x, mask) # Q, K, V são todos de x
+        x = self.add_norm1(x, attn_output)
+
+        # Subcamada Feed-Forward
+        ff_output = self.feed_forward(x)
+        x = self.add_norm2(x, ff_output)
+        return x
+
+# Bloco Decodificador (Tarefa 3 - versão NumPy)
+class DecoderBlock:
+    def __init__(self, d_model, n_heads, d_ff, dropout_rate):
+        self.masked_self_attn = MultiHeadAttention(d_model, n_heads)
+        self.cross_attn = MultiHeadAttention(d_model, n_heads)
+        self.feed_forward = FeedForward(d_model, d_ff, dropout_rate)
+        self.add_norm1 = AddNorm(d_model, dropout_rate)
+        self.add_norm2 = AddNorm(d_model, dropout_rate)
+        self.add_norm3 = AddNorm(d_model, dropout_rate)
+
+    def __call__(self, x, memory, src_mask, tgt_mask):
+        # Auto-Atenção Mascarada
+        masked_attn_output = self.masked_self_attn(x, x, x, tgt_mask)
+        x = self.add_norm1(x, masked_attn_output)
+
+        # Atenção Cruzada
+        cross_attn_output = self.cross_attn(x, memory, memory, src_mask)
+        x = self.add_norm2(x, cross_attn_output)
+
+        # Feed-Forward
+        ff_output = self.feed_forward(x)
+        x = self.add_norm3(x, ff_output)
+        return x
+
+# Modelo Transformador Completo (versão NumPy)
+class Transformer:
+    def __init__(self, src_vocab_size, tgt_vocab_size, d_model, n_heads, d_ff, n_encoder_layers, n_decoder_layers, dropout_rate, max_len=5000):
+        self.encoder_embedding = Embedding(src_vocab_size, d_model)
+        self.decoder_embedding = Embedding(tgt_vocab_size, d_model)
+        self.positional_encoding = PositionalEncoding(d_model, max_len)
+
+        self.encoder_blocks = [EncoderBlock(d_model, n_heads, d_ff, dropout_rate) for _ in range(n_encoder_layers)]
+        self.decoder_blocks = [DecoderBlock(d_model, n_heads, d_ff, dropout_rate) for _ in range(n_decoder_layers)]
+
+        self.output_linear = Linear(d_model, tgt_vocab_size)
+
+    def __call__(self, src, tgt, src_mask, tgt_mask):
+        src = self.positional_encoding(self.encoder_embedding(src))
+        tgt = self.positional_encoding(self.decoder_embedding(tgt))
+
+        encoder_output = src
+        for encoder_block in self.encoder_blocks:
+            encoder_output = encoder_block(encoder_output, src_mask)
+
+        decoder_output = tgt
+        for decoder_block in self.decoder_blocks:
+            decoder_output = decoder_block(decoder_output, encoder_output, src_mask, tgt_mask)
+
+        output = self.output_linear(decoder_output)
+        return output
+
+# Função auxiliar para criar máscaras (versão NumPy)
+def create_masks(src, tgt, pad_idx):
+    src_mask = (src != pad_idx)[:, np.newaxis, np.newaxis, :]
+    
+    # Máscara causal para auto-atenção do decodificador
+    tgt_len = tgt.shape[1]
+    nopeak_mask = np.triu(np.ones((1, tgt_len, tgt_len)), k=1).astype(bool)
+    nopeak_mask = np.logical_not(nopeak_mask) # Inverte para obter triangular inferior
+    
+    # Combina com máscara de preenchimento para alvo
+    tgt_padding_mask = (tgt != pad_idx)[:, np.newaxis, np.newaxis, :]
+    tgt_mask = np.logical_and(tgt_padding_mask, nopeak_mask)
+
+    return src_mask, tgt_mask
+
