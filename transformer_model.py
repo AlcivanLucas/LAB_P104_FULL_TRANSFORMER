@@ -222,3 +222,104 @@ def create_masks(src, tgt, pad_idx):
 
     return src_mask, tgt_mask
 
+# Laço de Inferência (Tarefa 4 - versão NumPy)
+def translate_sentence(model, sentence, src_tokenizer, tgt_tokenizer, max_len, start_token, eos_token, pad_token):
+    # Tokeniza sentença de origem
+    src_indices = src_tokenizer.tokenize(sentence)
+    src_tensor = np.array(src_indices)[np.newaxis, :] # Adiciona dimensão de lote
+
+    # Cria máscara de origem
+    src_mask, _ = create_masks(src_tensor, src_tensor, src_tokenizer.word_to_idx[pad_token]) # src_mask para codificador
+
+    # Inicializa sequência de alvo com token <INÍCIO>
+    tgt_indices = [tgt_tokenizer.word_to_idx[start_token]]
+    output_tensor = np.array(tgt_indices)[np.newaxis, :]
+
+    # Passagem para frente pelo codificador uma vez
+    encoder_output = model.positional_encoding(model.encoder_embedding(src_tensor))
+    for encoder_block in model.encoder_blocks:
+        encoder_output = encoder_block(encoder_output, src_mask)
+
+    for i in range(max_len):
+        # Cria máscara de alvo (máscara causal)
+        _, tgt_mask = create_masks(output_tensor, output_tensor, tgt_tokenizer.word_to_idx[pad_token])
+
+        # Passagem para frente pelo decodificador
+        decoder_input = model.positional_encoding(model.decoder_embedding(output_tensor))
+        decoder_output = decoder_input
+        for decoder_block in model.decoder_blocks:
+            decoder_output = decoder_block(decoder_output, encoder_output, src_mask, tgt_mask)
+
+        output = model.output_linear(decoder_output)
+
+        # Obtém próximo token predito
+        pred_token = np.argmax(output[:, -1, :], axis=-1).item()
+        tgt_indices.append(pred_token)
+
+        # Anexa ao tensor de saída para próxima iteração
+        output_tensor = np.array(tgt_indices)[np.newaxis, :]
+
+        # Para se token <FIM> for predito
+        if pred_token == tgt_tokenizer.word_to_idx[eos_token]:
+            break
+
+    # Decodifica índices de saída
+    translated_sentence = tgt_tokenizer.decode(tgt_indices[1:]) # Exclui <INÍCIO>
+    return translated_sentence
+
+if __name__ == '__main__':
+    # Hiperparâmetros (simplificados para exemplo de brinquedo)
+    d_model = 512
+    n_heads = 8
+    d_ff = 2048
+    n_encoder_layers = 3
+    n_decoder_layers = 3
+    dropout_rate = 0.1 # Não ativo nesta implementação NumPy somente de inferência
+    max_len = 100 # Comprimento máximo de sequência para codificação posicional e inferência
+
+    # Tokens especiais
+    PAD_TOKEN = '<pad>'
+    START_TOKEN = '<start>'
+    EOS_TOKEN = '<eos>'
+
+    # Cria tokenizadores
+    src_tokenizer = Tokenizer(special_tokens=[PAD_TOKEN, START_TOKEN, EOS_TOKEN])
+    tgt_tokenizer = Tokenizer(special_tokens=[PAD_TOKEN, START_TOKEN, EOS_TOKEN])
+
+    # Sentenças de exemplo para construir vocabulário
+    src_sentence = "Thinking Machines"
+    tgt_sentence = "Máquinas Pensantes"
+
+    src_tokenizer.tokenize(src_sentence)
+    tgt_tokenizer.tokenize(tgt_sentence)
+
+    # Adiciona mais palavras ao tokenizador alvo para vocabulário mais rico
+    tgt_tokenizer.add_word("olá")
+    tgt_tokenizer.add_word("mundo")
+    tgt_tokenizer.add_word("como")
+    tgt_tokenizer.add_word("vai")
+    tgt_tokenizer.add_word("eu")
+    tgt_tokenizer.add_word("sou")
+    tgt_tokenizer.add_word("um")
+    tgt_tokenizer.add_word("modelo")
+    tgt_tokenizer.add_word("de")
+    tgt_tokenizer.add_word("linguagem")
+
+    src_vocab_size = src_tokenizer.vocab_size
+    tgt_vocab_size = tgt_tokenizer.vocab_size
+
+    print(f"Tamanho do Vocabulário de Origem: {src_vocab_size}")
+    print(f"Tamanho do Vocabulário de Alvo: {tgt_vocab_size}")
+
+    # Instancia o modelo
+    model = Transformer(src_vocab_size, tgt_vocab_size, d_model, n_heads, d_ff, n_encoder_layers, n_decoder_layers, dropout_rate, max_len)
+
+    print("Modelo Transformador instanciado com sucesso usando NumPy!")
+
+    # Simula uma tradução
+    print(f"\nTraduzindo: '{src_sentence}'")
+    translated_output = translate_sentence(model, src_sentence, src_tokenizer, tgt_tokenizer, max_len, START_TOKEN, EOS_TOKEN, PAD_TOKEN)
+    print(f"Traduzido: '{translated_output}'")
+
+    # Nota: Sem treinamento real, a tradução será aleatória.
+    # Isto demonstra a arquitetura e laço de inferência usando NumPy puro.
